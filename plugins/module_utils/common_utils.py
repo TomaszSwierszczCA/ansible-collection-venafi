@@ -46,6 +46,41 @@ DIGICERT = 'DIGICERT'
 ENTRUST = 'ENTRUST'
 MICROSOFT = 'MICROSOFT'
 
+# Certificate revocation reasons. The strings match the Go vcert CLI vocabulary
+# (cmd/vcert/validators.go) so users share one mental model across tools; each maps to the
+# integer code used by vcert.RevocationRequest.RevocationReasons (see get_revocation_reason).
+REVOKE_REASON_NONE = 'none'
+REVOKE_REASON_KEY_COMPROMISE = 'key-compromise'
+REVOKE_REASON_CA_COMPROMISE = 'ca-compromise'
+REVOKE_REASON_AFFILIATION_CHANGED = 'affiliation-changed'
+REVOKE_REASON_SUPERSEDED = 'superseded'
+REVOKE_REASON_CESSATION_OF_OPERATION = 'cessation-of-operation'
+
+# All accepted revocation reasons, in the same order as the Go CLI. Note that 'ca-compromise'
+# is only accepted by Self-Hosted (TPP); SaaS and NGTS reject it (there is no GraphQL enum for
+# it), so callers must guard that backend combination.
+REVOCATION_REASONS = [
+    REVOKE_REASON_NONE,
+    REVOKE_REASON_KEY_COMPROMISE,
+    REVOKE_REASON_CA_COMPROMISE,
+    REVOKE_REASON_AFFILIATION_CHANGED,
+    REVOKE_REASON_SUPERSEDED,
+    REVOKE_REASON_CESSATION_OF_OPERATION,
+]
+
+# Reason string -> integer code. These are the values of vcert.RevocationRequest.RevocationReasons
+# (NoReason=0, key_compromise=1, ca_compromise=2, affiliation_changed=3, superseded=4,
+# cessation_of_operation=5). Kept as literals so the mapping is usable for documentation even
+# when vcert is not installed (mirrors the HAS_VCERT guard elsewhere in this module).
+_REVOCATION_REASON_CODES = {
+    REVOKE_REASON_NONE: 0,
+    REVOKE_REASON_KEY_COMPROMISE: 1,
+    REVOKE_REASON_CA_COMPROMISE: 2,
+    REVOKE_REASON_AFFILIATION_CHANGED: 3,
+    REVOKE_REASON_SUPERSEDED: 4,
+    REVOKE_REASON_CESSATION_OF_OPERATION: 5,
+}
+
 
 def venafi_common_argument_spec():
     """
@@ -225,6 +260,22 @@ def get_issuer_hint(hint):
         return IssuerHint.DEFAULT
     else:
         raise VenafiAnsibleError("Issuer Hint not valid: %s" % hint)
+
+
+def get_revocation_reason(reason):
+    """
+    Maps a revocation reason string (the Go vcert vocabulary, e.g. 'key-compromise') to the
+    integer code consumed by vcert.RevocationRequest. 'none'/None yields 0 (NoReason).
+
+    :param str reason:
+    :rtype: int
+    """
+    if not reason:
+        return _REVOCATION_REASON_CODES[REVOKE_REASON_NONE]
+    try:
+        return _REVOCATION_REASON_CODES[reason]
+    except KeyError:
+        raise VenafiAnsibleError("Revocation reason not valid: %s" % reason)
 
 
 class VenafiAnsibleError(Exception):

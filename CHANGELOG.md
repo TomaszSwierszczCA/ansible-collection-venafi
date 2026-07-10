@@ -2,6 +2,10 @@
 
 ## Version History
 
+##### 1.3.0
+* Added the `venafi_certificate_revoke` module to revoke a certificate on CyberArk Certificate Manager, Self-Hosted (TPP), SaaS, and NGTS (Strata Cloud Manager). Self-Hosted (TPP) revokes by certificate DN (`certificate_dn`) or SHA-1 `thumbprint` and honors retire/`no_retire`; SaaS and NGTS revoke by SHA-1 `thumbprint` (the DN and the `ca-compromise` reason are not supported, and `no_retire` is ignored). The reason vocabulary matches the Go `vcert revoke` command (`none`, `key-compromise`, `ca-compromise`, `affiliation-changed`, `superseded`, `cessation-of-operation`). Revocation is imperative: the module always attempts to revoke and the inherited `state` option is accepted but ignored.
+* Bumped the `vcert` dependency to `vcert>=0.21.0` in `requirements.in` and regenerated the hash-pinned `requirements.txt` lockfile. SaaS and NGTS certificate revocation is only available in `vcert` 0.21.0; Self-Hosted (TPP) revocation also works on earlier releases.
+
 ##### 1.2.0
 * Bumped the `vcert` dependency to `vcert>=0.20.0` in `requirements.in` and regenerated the hash-pinned `requirements.txt` lockfile (`vcert==0.20.0`). `vcert` 0.20.0 adds NGTS policy management on top of the NGTS support and security fixes introduced in 0.19.0 — sensitive data redacted from debug logs (CWE-532), safe YAML loading in the policy parser (CWE-502), and TLS verification enabled by default with a warning when disabled (CWE-295). These are backward compatible: the collection already passes `verify` only when a `trust_bundle` is supplied (otherwise `requests`' default of verified TLS applies) and uses plain-data policy specs.
 * Added support for NGTS (Strata Cloud Manager) certificate enrollment and renewal in the `venafi_certificate` module and `certificate` role. NGTS is selected by supplying the OAuth2 service-account credentials (`client_id`, `client_secret`, and `tsg_id` or `scope`); `url` and `token_url` are optional and default to the Palo Alto production endpoints.
