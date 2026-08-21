@@ -2,6 +2,9 @@
 
 ## Version History
 
+##### 1.3.1
+* Bumped the `vcert` dependency to `vcert>=0.21.1` in `requirements.in` and regenerated the hash-pinned `requirements.txt` lockfile (`vcert==0.21.1`). `vcert` 0.21.1 fixes service-generated CSR (`csr_origin: service`) enrollment on CyberArk Certificate Manager, Self-Hosted (TPP): the requested key specification (key type and size, e.g. RSA 4096) is now sent on the enrollment request, so TPP no longer silently falls back to the policy-folder default key size. This resolves the `Private key file does not contain a valid private key` failure in the `venafi_certificate` module that occurred when `privatekey_size` did not match the policy default (surfaced after upgrading to TPP 25.1+/25.3). Delivered entirely through the updated `vcert` SDK — no collection code changes.
+
 ##### 1.3.0
 * Added the `venafi_certificate_revoke` module to revoke a certificate on CyberArk Certificate Manager, Self-Hosted (TPP), SaaS, and NGTS (Strata Cloud Manager). Self-Hosted (TPP) revokes by certificate DN (`certificate_dn`) or SHA-1 `thumbprint` and honors retire/`no_retire`; SaaS and NGTS revoke by SHA-1 `thumbprint` (the DN and the `ca-compromise` reason are not supported, and `no_retire` is ignored). The reason vocabulary matches the Go `vcert revoke` command (`none`, `key-compromise`, `ca-compromise`, `affiliation-changed`, `superseded`, `cessation-of-operation`). Revocation is imperative: the module always attempts to revoke and the inherited `state` option is accepted but ignored.
 * Bumped the `vcert` dependency to `vcert>=0.21.0` in `requirements.in` and regenerated the hash-pinned `requirements.txt` lockfile. SaaS and NGTS certificate revocation is only available in `vcert` 0.21.0; Self-Hosted (TPP) revocation also works on earlier releases.
