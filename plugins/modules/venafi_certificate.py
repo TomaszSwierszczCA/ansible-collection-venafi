@@ -493,8 +493,12 @@ class VCertificate:
             if self._check_private_key_correct() and not self.privatekey_reuse:
                 private_key = to_text(open(self.privatekey_filename, "rb").read())
                 request.private_key = private_key
-            elif self.privatekey_type:
-                request.key_type = self._get_key_type()
+            else:
+                if self.privatekey_type:
+                    request.key_type = self._get_key_type()
+                # vcert generates a new key pair for this request; make sure it is serialized to
+                # disk. Previously this only happened when privatekey_type was set explicitly, so a
+                # default local-CSR enrollment left the private key file unwritten (VC-59232 #2).
                 self.serialize_private_key = True
         else:
             self.module.fail_json(msg="Failed to determine %s: %s" % (F_CSR_ORIGIN, self.csr_origin))
@@ -720,6 +724,9 @@ class VCertificate:
 
     def check(self, validate):
         """Return true if running will change anything"""
+        # Reset accumulated messages so that main() calling check() and then validate() (which
+        # calls check() again) does not produce duplicated error text (VC-59232 #3).
+        self.changed_message = []
         result = {
             'cert_file_exists': True,
             'changed': False,
