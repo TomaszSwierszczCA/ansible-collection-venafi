@@ -14,3 +14,4 @@ tests/roles/
 .DS_Store
 __pycache__/
 *.py[cod]
+.ansible/
