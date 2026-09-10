@@ -57,9 +57,46 @@ extends_documentation_fragment:
 '''
 
 EXAMPLES = '''
-- name: CyberArk Certificate Manager, SaaS
+- name: Apply a policy on CyberArk Certificate Manager, Self-Hosted (TPP)
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create or update the policy folder
+      venafi.machine_identity.venafi_policy:
+        url: 'https://tpp.example.com/vedsdk'
+        access_token: !vault |
+            $ANSIBLE_VAULT;1.1;AES256
+        zone: 'example\\policy'
+        policy_spec_path: '/etc/venafi/policy.json'
+        state: present
 
-- name: Create a Policy in CyberArk Certificate Manager, Self-Hosted
+- name: Apply a policy on CyberArk Certificate Manager, SaaS
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create or update the issuing template
+      venafi.machine_identity.venafi_policy:
+        token: !vault |
+            $ANSIBLE_VAULT;1.1;AES256
+        zone: 'My Application\\My Issuing Template'
+        policy_spec_path: '/etc/venafi/policy.yml'
+        state: present
+
+- name: Apply a policy on Strata Cloud Manager (NGTS)
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create or update the issuing template (NGTS uses the CIT alias only)
+      venafi.machine_identity.venafi_policy:
+        # url and token_url default to the Palo Alto production endpoints; set both
+        # explicitly for non-production tenants.
+        client_id: 'svc-account@1234567890.iam.panserviceaccount.com'
+        client_secret: !vault |
+            $ANSIBLE_VAULT;1.1;AES256
+        tsg_id: '1234567890'
+        zone: 'my-issuing-template'
+        policy_spec_path: '/etc/venafi/ngts-policy.yml'
+        state: present
 '''
 
 RETURN = '''
@@ -88,10 +125,14 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.common.text.converters import to_native
 try:
     from ansible_collections.venafi.machine_identity.plugins.module_utils.common_utils \
-        import get_venafi_connection, module_common_argument_spec, venafi_common_argument_spec
+        import get_venafi_connection, module_common_argument_spec, venafi_common_argument_spec, is_ngts_request
+    from ansible_collections.venafi.machine_identity.plugins.module_utils.policy_utils \
+        import check_policy_specification
 except ImportError:
     from plugins.module_utils.common_utils \
-        import get_venafi_connection, module_common_argument_spec, venafi_common_argument_spec
+        import get_venafi_connection, module_common_argument_spec, venafi_common_argument_spec, is_ngts_request
+    from plugins.module_utils.policy_utils \
+        import check_policy_specification
 
 HAS_VCERT = True
 try:
@@ -159,16 +200,17 @@ class VPolicyManagement:
 
         if self.state == 'present':
             if remote_ps:
-                # Policy already exists in CyberArk platform
-                # Validate that both, the source policy and the CyberArk platform policy have the same content
-                # local_ps = self._read_policy_spec_file(self.local_ps)
-                # changed, new_msgs = check_policy_specification(local_ps, remote_ps)
-                changed = True
+                # Policy already exists: compare the local spec against the platform's to decide
+                # whether an update is actually needed (idempotency). NGTS has no owner/user layer,
+                # so skip owners/users/approvers there (they always read back empty).
+                local_ps = self._read_policy_spec_file(self.local_ps)
+                changed, new_msgs = check_policy_specification(
+                    local_ps, remote_ps, ignore_owners_users=is_ngts_request(self.module))
                 if changed:
                     result[F_CHANGED] = True
                     result[F_POLICY_UPDATED] = self.zone
-                    # msgs.extend(new_msgs)
-                    msgs.append('Policy %s found on CyberArk platform. Overriding with values from %s'
+                    msgs.extend(new_msgs)
+                    msgs.append('Policy %s differs from local file %s. Updating.'
                                 % (self.zone, self.local_ps))
                 else:
                     msgs.append('No changes detected in local file %s. No action required' % self.local_ps)
@@ -179,10 +221,12 @@ class VPolicyManagement:
                 msgs.append('Creating policy %s on CyberArk platform' % self.zone)
         elif self.state == 'absent':
             if remote_ps:
-                # Policy already exists in CyberArk platform, must be deleted.
+                # Policy exists but the desired state is absent. Deletion is not supported by the
+                # vcert library, so report the drift honestly; the apply step fails cleanly.
                 result[F_CHANGED] = True
                 result[F_POLICY_DELETED] = self.zone
-                msgs.append('Deleting %s policy from CyberArk platform' % self.zone)
+                msgs.append('Policy %s exists but deletion is not supported by the vcert library; '
+                            'state=absent cannot be satisfied.' % self.zone)
             else:
                 # Policy does not exist on CyberArk platform, no action required.
                 msgs.append('Policy %s is absent on CyberArk platform. No action required' % self.zone)
@@ -278,8 +322,10 @@ def main():
         module.fail_json(msg='\'vcert\' python library is required')
 
     vcert = VPolicyManagement(module)
-    # Validate that policy_spec_path exists
-    vcert.validate_local_path()
+    # policy_spec_path is only used for state=present; it is ignored for state=absent
+    # (documented), so only require the file to exist when creating/updating a policy.
+    if vcert.state == 'present':
+        vcert.validate_local_path()
 
     check_result = vcert.check()
     if module.check_mode:
@@ -287,11 +333,12 @@ def main():
 
     if vcert.state == 'present' and (check_result[F_CHANGED] or vcert.force):
         vcert.set_policy()
-    elif vcert.state == 'absent' and (check_result[F_CHANGED] or vcert.force):
-        # TODO create delete_policy() method. Not yet available on vcert python library
+    elif vcert.state == 'absent' and check_result[F_CHANGED]:
+        # delete_policy() is not supported by the vcert library and fails cleanly. Only reached
+        # when the policy actually exists (check_result changed) so 'force' cannot trigger a
+        # spurious delete of a non-existent policy.
         vcert.delete_policy()
 
-    # vcert.validate()
     module.exit_json(**check_result)
 
 
