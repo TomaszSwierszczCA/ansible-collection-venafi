@@ -106,12 +106,15 @@ options:
         type: str
     privatekey_curve:
         description:
-            - Curve name for ECDSA algorithm.
+            - Curve name for the ECDSA private key algorithm.
+            - Requires I(privatekey_type=ECDSA). Use C(ed25519) to request an Ed25519 key
+              (needs C(vcert>=0.22.0)).
         default: P521
         choices:
             - P256
             - P384
             - P521
+            - ed25519
         type: str
     privatekey_passphrase:
         description:
@@ -278,7 +281,7 @@ privatekey_size:
     sample: 4096
 
 privatekey_curve:
-    description: ECDSA curve of generated private key. Variants are "P521", "P384", "P256", "P224".
+    description: ECDSA curve of generated private key. Variants are "P521", "P384", "P256", "ed25519".
     returned: changed or success
     type: string
     sample: "P521"
@@ -308,7 +311,7 @@ import os.path
 import random
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_text
 try:
     from ansible_collections.venafi.machine_identity.plugins.module_utils.common_utils \
         import get_venafi_connection, module_common_argument_spec, venafi_common_argument_spec, get_issuer_hint, \
@@ -360,6 +363,15 @@ F_USE_PKCS12 = "use_pkcs12_format"
 F_VALIDITY_HOURS = "validity_hours"
 F_ISSUER_HINT = "issuer_hint"
 F_CUSTOM_FIELDS = "custom_fields"
+
+
+def _normalize_curve(curve):
+    """Normalize an EC curve/key label for case- and format-insensitive comparison
+    (e.g. 'P-256'/'P256'/'p256' -> 'p256', 'ED25519' -> 'ed25519'). vcert's KeyType stores
+    the curve option lowercased, while the module receives the user's value verbatim, so both
+    operands must be normalized or an already-correct ECDSA key is judged wrong and the
+    certificate re-enrolls on every run."""
+    return str(curve).lower().replace("-", "") if curve is not None else curve
 
 
 class VCertificate:
@@ -452,7 +464,7 @@ class VCertificate:
             if self.privatekey_size != r.key_type.option:
                 return False
         if key_type == "ec" and self.privatekey_curve:
-            if self.privatekey_curve != r.key_type.option:
+            if _normalize_curve(self.privatekey_curve) != _normalize_curve(r.key_type.option):
                 return False
         return True
 
@@ -539,9 +551,9 @@ class VCertificate:
             self.module.fail_json(msg=("Failed to determine key type: %s. Must be RSA or ECDSA"
                                        % self.privatekey_type))
         if key_type == "rsa":
-            return KeyType(KeyType.RSA, self.privatekey_size)
+            return KeyType(KeyType.RSA, self.privatekey_size or 2048)
         elif key_type == "ecdsa" or key_type == "ec":
-            return KeyType(KeyType.ECDSA, self.privatekey_curve)
+            return KeyType(KeyType.ECDSA, self.privatekey_curve or "P521")
         else:
             self.module.fail_json(msg=("Failed to determine key type: %s. Must be RSA or ECDSA"
                                        % self.privatekey_type))
@@ -817,12 +829,12 @@ def main():
         custom_fields=dict(type='dict', required=False),
         issuer_hint=dict(type='str', choices=[DEFAULT, DIGICERT, ENTRUST, MICROSOFT], default=DEFAULT, required=False),
         path=dict(type='path', aliases=['cert_path'], required=True),
-        privatekey_curve=dict(type='str', required=False),
+        privatekey_curve=dict(type='str', required=False, choices=['P256', 'P384', 'P521', 'ed25519']),
         privatekey_passphrase=dict(type='str', no_log=True),
         privatekey_path=dict(type='path', required=False),
         privatekey_reuse=dict(type='bool', required=False, default=True),
-        privatekey_size=dict(type='int', required=False),
-        privatekey_type=dict(type='str', required=False),
+        privatekey_size=dict(type='int', required=False, choices=[2048, 3072, 4096, 8192]),
+        privatekey_type=dict(type='str', required=False, choices=['RSA', 'ECDSA']),
         renew=dict(type='bool', required=False, default=True),
         use_pkcs12_format=dict(type='bool', default=False, required=False),
         validity_hours=dict(type='int', required=False),

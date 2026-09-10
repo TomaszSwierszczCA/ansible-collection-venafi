@@ -82,11 +82,11 @@ ansible-molecule:
 #	--extra-vars "credentials_file=fake_credentials.yml docker_demo=true"
 
 unit-test:
-	PYTHONPATH=./:$PYTHONPATH pytest ./tests/certificate/test_venafi_certificate.py ./tests/certificate/test_vc59232_local_csr.py ./tests/common_utils/test_common_utils.py ./tests/revocation/test_revocation.py
+	PYTHONPATH=./:$PYTHONPATH pytest ./tests/certificate/test_venafi_certificate.py ./tests/certificate/test_vc59232_local_csr.py ./tests/certificate/test_key_type_and_idempotency.py ./tests/common_utils/test_common_utils.py ./tests/revocation/test_revocation.py
 
 install:
 	ansible-galaxy collection build --force
-	ansible-galaxy collection install venafi-machine_identity-1.0.1.tar.gz --force
+	ansible-galaxy collection install "venafi-machine_identity-$$(awk '/^version:/{print $$2}' galaxy.yml).tar.gz" --force
 
 uninstall:
 	rm -rf ~/.ansible/collections/ansible_collections/venafi
